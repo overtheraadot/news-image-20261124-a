@@ -1,27 +1,55 @@
 #!/usr/bin/env python3
 """Front Page - Tuesday 24 November 2026: 35 stories, 7 regions.
 
-The image is drawn by render.py (kept in this repo) and committed as
-entry.png. This program only copies it to /output/entry.png, using the
-standard library alone, so it runs with no network and is byte-for-byte
-deterministic.
+The graded entry is the committed entry.png (drawn by render.py and kept
+in this repo). This program is the only thing the grader runs: it copies
+that image to the output directory byte-for-byte, using the standard
+library alone, so it needs no network, no fonts and no third-party
+packages. The output path honours MAKEFUN_OUTPUT_DIR and otherwise
+defaults to /output/entry.png.
 """
 import os
 import shutil
 import sys
+from pathlib import Path
+
+MAX_BYTES = 1_048_576  # 1 MiB size gate for the entry image
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"  # first 8 bytes of every PNG file
 
 
-def main():
-    here = os.path.dirname(os.path.abspath(__file__))
-    src = os.path.join(here, "entry.png")
-    if not os.path.isfile(src):
-        raise SystemExit("entry.png missing next to main.py")
-    if os.path.getsize(src) > 1048576:
-        raise SystemExit("entry.png exceeds the 1 MiB gate")
-    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR", "/output")
-    os.makedirs(out_dir, exist_ok=True)
-    shutil.copyfile(src, os.path.join(out_dir, "entry.png"))
+def entry_source() -> Path:
+    """Locate the committed image next to this file and check its size."""
+    here = Path(__file__).resolve().parent
+    image = here / "entry.png"
+    if not image.is_file():
+        raise SystemExit(f"entry image not found: {image}")
+    size = image.stat().st_size
+    if size > MAX_BYTES:
+        raise SystemExit(f"entry image is {size} bytes, over the 1 MiB gate")
+    with image.open("rb") as handle:
+        if handle.read(len(PNG_MAGIC)) != PNG_MAGIC:
+            raise SystemExit(f"entry image is not a PNG file: {image}")
+    return image
+
+
+def output_path() -> Path:
+    """Resolve where the graded image must land."""
+    folder = Path(os.environ.get("MAKEFUN_OUTPUT_DIR") or "/output")
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / "entry.png"
+
+
+def publish() -> int:
+    """Copy the committed image to the output directory."""
+    source = entry_source()
+    target = output_path()
+    shutil.copyfile(source, target)
+    if target.stat().st_size != source.stat().st_size:
+        raise SystemExit("copied image size differs from the committed image")
+    print(f"copied {source.name} -> {target} "
+          f"({target.stat().st_size} bytes)")
+    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(publish())
